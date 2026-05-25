@@ -102,14 +102,50 @@ jobs:
           SUBARCH: arm64
         run: |
           cd $GITHUB_WORKSPACE/kernel
-          export PATH="$GITHUB_WORKSPACE/toolchain/clang/bin:/usr/bin:/bin:$PATH"
           
-          # Добавлен флаг LLVM_IAS=0 в самый конец
-          MAKE_ARGS="O=out CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- HOSTCC=gcc HOSTLD=/usr/bin/ld LD=ld.lld LLVM_IAS=0"
+          # Задаем строгий путь к бинарникам Proton Clang
+          CLANG_BIN="$GITHUB_WORKSPACE/toolchain/clang/bin"
+          export PATH="$CLANG_BIN:/usr/bin:/bin:$PATH"
           
-          make $MAKE_ARGS floral_defconfig
-          make $MAKE_ARGS olddefconfig
-          make $MAKE_ARGS Image -j$(nproc)
+          # Очищаем предыдущие остатки неудачной компиляции
+          make O=out clean || true
+          make O=out mrproper || true
+          
+          # 1. Применяем дефконфиг
+          make O=out \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            HOSTCC=gcc \
+            HOSTLD=/usr/bin/ld \
+            floral_defconfig
+          
+          # 2. Принимаем изменения конфигурации
+          make O=out \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            HOSTCC=gcc \
+            HOSTLD=/usr/bin/ld \
+            olddefconfig
+          
+          # 3. Запускаем чистую сборку самого ядра Image с жестким указанием путей утилит тулчейна
+          make O=out \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            HOSTCC=gcc \
+            HOSTLD=/usr/bin/ld \
+            AR=$CLANG_BIN/llvm-ar \
+            NM=$CLANG_BIN/llvm-nm \
+            OBJCOPY=$CLANG_BIN/llvm-objcopy \
+            OBJDUMP=$CLANG_BIN/llvm-objdump \
+            STRIP=$CLANG_BIN/llvm-strip \
+            Image -j$(nproc)
+
 
 
       - name: Package with AnyKernel3
