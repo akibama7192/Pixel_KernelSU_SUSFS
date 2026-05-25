@@ -53,30 +53,37 @@ jobs:
         run: |
           cd $GITHUB_WORKSPACE/kernel
           
+          # 1. Скачиваем стабильный релиз KernelSU v0.9.5
           RAW_KSU="https://github.com/tiann/KernelSU"
-          git clone "$(echo "$RAW_KSU" | tr -d ' ')" KernelSU-Source
+          git clone --depth=1 "$(echo "$RAW_KSU" | tr -d ' ')" KernelSU-Source
           cd KernelSU-Source && git fetch --tags && git checkout v0.9.5 && cd ..
           cp -r KernelSU-Source/kernel drivers/kernelsu
           echo "obj-y += kernelsu/" >> drivers/Makefile
           rm -rf KernelSU-Source
 
+          # 2. Подготавливаем папки под структуру автоматики WildKernels
           mkdir -p $GITHUB_WORKSPACE/kernel_patches/next
           
+          # 3. Копируем патчи туда, где их ожидает увидеть скрипт patch.sh
           if [ -f "$GITHUB_WORKSPACE/kernel_patches/KernelSU/ksu_susfs.patch" ]; then
             cp $GITHUB_WORKSPACE/kernel_patches/KernelSU/ksu_susfs.patch $GITHUB_WORKSPACE/kernel_patches/next/0001-kernel-patch-susfs-v1.5.5-to-KernelSU-Next-v1.0.5.patch || true
           fi
 
+          # 4. ИСПРАВЛЕННЫЙ ПУТЬ: Копируем файлы самого SUSFS из корня скачанной ветки susfs_source
           mkdir -p fs/susfs include/linux
-          cp $GITHUB_WORKSPACE/susfs_source/kernel-4.14/fs/susfs/* fs/susfs/ || true
-          cp $GITHUB_WORKSPACE/susfs_source/kernel-4.14/include/linux/susfs.h include/linux/ || true
+          cp -r $GITHUB_WORKSPACE/susfs_source/kernel_patches/fs/* fs/susfs/ || true
+          cp -r $GITHUB_WORKSPACE/susfs_source/kernel_patches/include/linux/* include/linux/ || true
+          echo "obj-y += susfs/" >> fs/Makefile
 
       - name: Apply Patches
         run: |
           cd $GITHUB_WORKSPACE/kernel
           echo "Applying SUSFS and KernelSU patches..."
           
+          # Создаем пустую заглушку патча, если скрипт будет искать её в папке next
           touch $GITHUB_WORKSPACE/kernel_patches/next/0001-kernel-patch-susfs-v1.5.5-to-KernelSU-Next-v1.0.5.patch
           
+          # Применяем оригинальный патч ядра 4.14 напрямую для надежности
           patch -p1 < $GITHUB_WORKSPACE/kernel_patches/50_add_susfs_in_kernel-4.14.patch || true
           patch -p1 < $GITHUB_WORKSPACE/kernel_patches/KernelSU/ksu_susfs.patch || true
 
@@ -84,6 +91,10 @@ jobs:
         env:
           ARCH: arm64
           SUBARCH: arm64
+          # Исправление ошибки ассемблера: принудительно задаем кросс-префиксы для всего окружения шага
+          CLANG_TRIPLE: aarch64-linux-gnu-
+          CROSS_COMPILE: aarch64-linux-gnu-
+          CROSS_COMPILE_ARM32: arm-linux-gnueabi-
         run: |
           cd $GITHUB_WORKSPACE/kernel
           
@@ -101,19 +112,16 @@ jobs:
           sed -i 's/-ftrivial-auto-var-init=zero/-ftrivial-auto-var-init=pattern/g' Makefile || true
           sed -i 's/CONFIG_COMPAT_VDSO=y/CONFIG_COMPAT_VDSO=n/g' arch/arm64/configs/floral_defconfig || true
 
-          # 2. Настраиваем окружение Proton Clang
+          # 2. Настраиваем жесткие пути Proton Clang
           CLANG_BIN="$GITHUB_WORKSPACE/toolchain/clang/bin"
           export PATH="$CLANG_BIN:/usr/bin:/bin:$PATH"
           
           make O=out clean || true
           make O=out mrproper || true
           
-          # 3. Базовые аргументы компиляции (КРИТИЧНО: добавлен LLVM_IAS=0)
+          # 3. Аргументы сборки с привязкой инструментов Proton Clang и отключением LLVM_IAS
           MAKE_ARGS="O=out \
             CC=clang \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
             HOSTCC=gcc \
             HOSTLD=/usr/bin/ld \
             AR=$CLANG_BIN/llvm-ar \
@@ -127,7 +135,7 @@ jobs:
           make $MAKE_ARGS floral_defconfig
           make $MAKE_ARGS olddefconfig
           
-          # 5. Запускаем компиляцию самого файла ядра
+          # 5. Запускаем компиляцию самого файла ядра Image
           make $MAKE_ARGS Image -j$(nproc)
 
       - name: Package with AnyKernel3
