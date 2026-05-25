@@ -104,11 +104,13 @@ jobs:
           cd $GITHUB_WORKSPACE/kernel
           export PATH="$GITHUB_WORKSPACE/toolchain/clang/bin:/usr/bin:/bin:$PATH"
           
-          MAKE_ARGS="O=out CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- HOSTCC=gcc HOSTLD=/usr/bin/ld LD=ld.lld"
+          # Добавлен флаг LLVM_IAS=0 в самый конец
+          MAKE_ARGS="O=out CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- HOSTCC=gcc HOSTLD=/usr/bin/ld LD=ld.lld LLVM_IAS=0"
           
           make $MAKE_ARGS floral_defconfig
           make $MAKE_ARGS olddefconfig
           make $MAKE_ARGS Image -j$(nproc)
+
 
       - name: Package with AnyKernel3
         run: |
