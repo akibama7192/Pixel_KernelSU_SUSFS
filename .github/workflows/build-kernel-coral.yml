@@ -57,21 +57,23 @@ jobs:
         run: |
           cd $GITHUB_WORKSPACE/kernel
           
-          # 1. Скачиваем официальный стабильный KernelSU (ветка legacy)
-          RAW_KSU="https://github.com/tiann/KernelSU"
+          # 1. Скачиваем официальный KernelSU, переключаясь на финальную non-GKI версию v0.9.5 вместо удаленной legacy
+          RAW_KSU="https:// github.com / tiann / KernelSU"
           git clone --depth=1 "$(echo "$RAW_KSU" | tr -d ' ')" KernelSU-Source
-          cd KernelSU-Source && git checkout legacy && cd ..
+          cd KernelSU-Source && git fetch --tags && git checkout v0.9.5 && cd ..
+          
+          # 2. Переносим исходники в структуру драйверов ядра
           cp -r KernelSU-Source/kernel drivers/kernelsu
           echo "obj-y += kernelsu/" >> drivers/Makefile
           rm -rf KernelSU-Source
 
-          # 2. Обманываем автоматику: переименовываем патч, чтобы скрипты WildKernels приняли его за next
+          # 3. Обманываем автоматику WildKernels: создаем для нее ожидаемую папку "next"
           mkdir -p $GITHUB_WORKSPACE/kernel_patches/next
           if [ -f "$GITHUB_WORKSPACE/kernel_patches/KernelSU/ksu_susfs.patch" ]; then
             cp $GITHUB_WORKSPACE/kernel_patches/KernelSU/ksu_susfs.patch $GITHUB_WORKSPACE/kernel_patches/next/0001-kernel-patch-susfs-v1.5.5-to-KernelSU-Next-v1.0.5.patch || true
           fi
 
-          # 3. Раскладываем файлы самого SUSFS туда, где их ожидает скрипт автоматизации патчей
+          # 4. Раскладываем файлы самого SUSFS туда, где их ожидает скрипт автоматизации
           cp $GITHUB_WORKSPACE/susfs_source/kernel-4.14/fs/susfs/* fs/susfs/ || true
           cp $GITHUB_WORKSPACE/susfs_source/kernel-4.14/include/linux/susfs.h include/linux/ || true
 
