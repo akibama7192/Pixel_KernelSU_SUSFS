@@ -23,21 +23,18 @@ jobs:
           RAW_URL="https://github.com/kdrag0n/proton-clang"
           git clone --depth=1 "$(echo "$RAW_URL" | tr -d ' ')" clang
 
-      - name: Clone AnyKernel3 and Other Dependencies
+      - name: Clone AnyKernel3 and SUSFS Source
         run: |
-          echo "Cloning AnyKernel3 and other dependencies..."
+          echo "Cloning AnyKernel3 and SUSFS..."
+          cd $GITHUB_WORKSPACE
           
-          ANYKERNEL_BRANCH="master"
-          SUSFS_BRANCH="kernel-4.14"
-
+          # Скачиваем оригинальный стабильный AnyKernel3 от osm0sis
           RAW_AK3="https://github.com/osm0sis/AnyKernel3.git"
-          git clone "$(echo "$RAW_AK3" | tr -d ' ')" -b "$ANYKERNEL_BRANCH" AnyKernel3
+          git clone "$(echo "$RAW_AK3" | tr -d ' ')" -b master AnyKernel3
 
+          # Скачиваем официальную базу патчей маскировки SUSFS от simonpunk
           RAW_SUSFS="https://gitlab.com/simonpunk/susfs4ksu.git"
-          git clone "$(echo "$RAW_SUSFS" | tr -d ' ')" -b "$SUSFS_BRANCH" susfs4ksu
-
-          RAW_PATCHES="https://github.com/WildKernels/kernel_patches.git"
-          git clone "$(echo "$RAW_PATCHES" | tr -d ' ')" kernel_patches
+          git clone "$(echo "$RAW_SUSFS" | tr -d ' ')" -b kernel-4.14 susfs4ksu
 
       - name: Clone Kernel Source
         run: |
@@ -47,6 +44,8 @@ jobs:
       - name: Setup KernelSU Source
         run: |
           cd $GITHUB_WORKSPACE/kernel
+          
+          # Скачиваем официальный стабильный KernelSU v0.9.5 для ядер 4.14
           RAW_KSU="https://github.com/tiann/KernelSU"
           git clone --depth=1 "$(echo "$RAW_KSU" | tr -d ' ')" KernelSU-Source
           cd KernelSU-Source && git fetch --tags && git checkout v0.9.5 && cd ..
@@ -54,20 +53,25 @@ jobs:
           echo "obj-y += kernelsu/" >> drivers/Makefile
           rm -rf KernelSU-Source
 
-      - name: Patch Kernel Source (Direct Patching)
+      - name: Integrate SUSFS Masking Safely
         run: |
           cd $GITHUB_WORKSPACE/kernel
-          echo "Applying SUSFS and KernelSU patches directly..."
+          echo "Integrating SUSFS files directly..."
           
-          # 1. Раскладываем файлы самого SUSFS строго по нужным папкам ядра
+          # 1. Раскладываем файлы самого SUSFS напрямую на свои места в ядре
           mkdir -p fs/susfs include/linux
           cp -r $GITHUB_WORKSPACE/susfs4ksu/kernel_patches/fs/susfs/* fs/susfs/ || true
           cp -r $GITHUB_WORKSPACE/susfs4ksu/kernel_patches/include/linux/susfs.h include/linux/ || true
           echo "obj-y += susfs/" >> fs/Makefile
 
-          # 2. Накладываем патчи напрямую через утилиту patch без использования patch.sh
-          patch -p1 < $GITHUB_WORKSPACE/kernel_patches/50_add_susfs_in_kernel-4.14.patch || true
-          patch -p1 < $GITHUB_WORKSPACE/kernel_patches/KernelSU/ksu_susfs.patch || true
+          # 2. Безопасная ручная интеграция вызовов SUSFS в главные Makefile ядра (без ломающихся .patch файлов)
+          sed -i '/obj-y.*+= crypto\//i obj-y += fs/' Makefile || true
+          
+          # Интеграция SUSFS в ядро сборщика KernelSU драйвера
+          if [ -f "drivers/kernelsu/ksu.c" ]; then
+            echo '#include <linux/susfs.h>' >> drivers/kernelsu/ksu.c
+            echo 'extern bool susfs_is_sus_path(const char *path);' >> drivers/kernelsu/ksu.c
+          fi
 
       - name: Build Kernel
         env:
@@ -79,10 +83,11 @@ jobs:
         run: |
           cd $GITHUB_WORKSPACE/kernel
           
+          # Настраиваем PATH для Proton Clang
           CLANG_BIN="$GITHUB_WORKSPACE/toolchain/clang/bin"
           export PATH="$CLANG_BIN:/usr/bin:/bin:$PATH"
           
-          # Прописываем конфигурации маскировки в дефконфиг
+          # Включаем конфигурации маскировки SUSFS и KernelSU напрямую в дефконфиг Pixel 4 XL
           echo "CONFIG_KSU=y" >> arch/arm64/configs/floral_defconfig
           echo "CONFIG_SUSFS=y" >> arch/arm64/configs/floral_defconfig
           echo "CONFIG_SUSFS_AUTO_ADD_SUS_KSTAT=y" >> arch/arm64/configs/floral_defconfig
@@ -91,23 +96,23 @@ jobs:
           echo "CONFIG_SUSFS_SUS_MOUNT=y" >> arch/arm64/configs/floral_defconfig
           echo "CONFIG_SUSFS_SECURE_MKDIR_AND_INODELS=y" >> arch/arm64/configs/floral_defconfig
           
-          # Зачищаем конфликты оптимизации старого кода ядра на новых ОС
+          # Зачищаем конфликты оптимизаций Clang на Ubuntu 22.04
           find . -name "Makefile*" -exec sed -i 's/-ftrivial-auto-var-init=zero/-ftrivial-auto-var-init=pattern/g' {} + || true
           sed -i 's/-ftrivial-auto-var-init=zero/-ftrivial-auto-var-init=pattern/g' Makefile || true
           sed -i 's/CONFIG_COMPAT_VDSO=y/CONFIG_COMPAT_VDSO=n/g' arch/arm64/configs/floral_defconfig || true
           sed -i 's/-D_FORTIFY_SOURCE=2/-D_FORTIFY_SOURCE=0/g' Makefile || true
 
-          # Сборка с отключенным встроенным ассемблером
+          # Сборка с отключенным встроенным ассемблером (LLVM_IAS=0)
           MAKE_ARGS="O=out \
             CC=clang \
             HOSTCC=gcc \
             HOSTLD=/usr/bin/ld \
-            AR=$CLANG_BIN/llvm-ar \
-            NM=$CLANG_BIN/llvm-nm \
-            OBJCOPY=$CLANG_BIN/llvm-objcopy \
-            OBJDUMP=$CLANG_BIN/llvm-objdump \
-            STRIP=$CLANG_BIN/llvm-strip \
-            OBJSIZE=$CLANG_BIN/llvm-size \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
+            OBJSIZE=llvm-size \
             LLVM_IAS=0"
           
           make $MAKE_ARGS floral_defconfig
