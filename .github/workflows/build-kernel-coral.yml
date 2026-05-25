@@ -43,18 +43,19 @@ jobs:
         run: |
           echo "Cloning AnyKernel3 and other dependencies..."
           
-          # Define the branch names using the matrix values
-          ANYKERNEL_BRANCH="non-gki"
           SUSFS_BRANCH="kernel-4.14"
-
-          # Debug print the branches
-          echo "Using branch for AnyKernel3: $ANYKERNEL_BRANCH"
           echo "Using branch for SUSFS: $SUSFS_BRANCH"
 
-          # Clone repositories using the branch names
-          git clone https://github.com/WildPlusKernel/AnyKernel3.git -b "$ANYKERNEL_BRANCH"
-          git clone https://gitlab.com/simonpunk/susfs4ksu.git -b "$SUSFS_BRANCH"
-          git clone https://github.com/WildPlusKernel/kernel_patches.git
+          # Клонируем главную ветку AnyKernel3 без указания удаленной non-gki
+          RAW_AK3="https://github.com/WildKernels/AnyKernel3.git"
+          git clone "$(echo "$RAW_AK3" | tr -d ' ')" AnyKernel3
+
+          RAW_SUSFS="https://gitlab.com/simonpunk/susfs4ksu.git"
+          git clone "$(echo "$RAW_SUSFS" | tr -d ' ')" -b "$SUSFS_BRANCH"
+
+          RAW_PATCHES="https://github.com/WildKernels/kernel_patches.git"
+          git clone "$(echo "$RAW_PATCHES" | tr -d ' ')"
+
       
       - name: Initialize and Sync Kernel Source
         run: |
