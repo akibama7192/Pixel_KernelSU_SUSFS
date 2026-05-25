@@ -84,6 +84,10 @@ jobs:
         env:
           ARCH: arm64
           SUBARCH: arm64
+          # Жестко прописываем префиксы кросс-компиляции
+          CLANG_TRIPLE: aarch64-linux-gnu-
+          CROSS_COMPILE: aarch64-linux-gnu-
+          CROSS_COMPILE_ARM32: arm-linux-gnueabi-
         run: |
           cd $GITHUB_WORKSPACE/kernel
           
@@ -96,21 +100,21 @@ jobs:
           echo "CONFIG_SUSFS_SUS_MOUNT=y" >> arch/arm64/configs/floral_defconfig
           echo "CONFIG_SUSFS_SECURE_MKDIR_AND_INODELS=y" >> arch/arm64/configs/floral_defconfig
           
-          # Очистка конфликтующих флагов оптимизации и защиты Clang/Ubuntu
+          # Очистка флагов оптимизации и FORTIFY защиты Clang
           find . -name "Makefile*" -exec sed -i 's/-ftrivial-auto-var-init=zero/-ftrivial-auto-var-init=pattern/g' {} + || true
           sed -i 's/-ftrivial-auto-var-init=zero/-ftrivial-auto-var-init=pattern/g' Makefile || true
           sed -i 's/CONFIG_COMPAT_VDSO=y/CONFIG_COMPAT_VDSO=n/g' arch/arm64/configs/floral_defconfig || true
           sed -i 's/-D_FORTIFY_SOURCE=2/-D_FORTIFY_SOURCE=0/g' Makefile || true
 
-          # 2. Настраиваем жесткие пути Proton Clang
+          # 2. Настраиваем окружение Proton Clang
           CLANG_BIN="$GITHUB_WORKSPACE/toolchain/clang/bin"
           export PATH="$CLANG_BIN:/usr/bin:/bin:$PATH"
           
           make O=out clean || true
           make O=out mrproper || true
           
-          # 3. Чистые аргументы компиляции БЕЗ системных утилит Ubuntu
-          MAKE_ARGS="O=out \
+          # 3. Полный явный вызов генерации .config
+          make O=out \
             CC=clang \
             HOSTCC=gcc \
             HOSTLD=/usr/bin/ld \
@@ -120,18 +124,37 @@ jobs:
             OBJDUMP=llvm-objdump \
             STRIP=llvm-strip \
             OBJSIZE=llvm-size \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-            LLVM_IAS=0"
+            LLVM_IAS=0 \
+            floral_defconfig
           
-          # 4. Генерируем конфигурацию .config
-          make $MAKE_ARGS floral_defconfig
-          make $MAKE_ARGS olddefconfig
+          make O=out \
+            CC=clang \
+            HOSTCC=gcc \
+            HOSTLD=/usr/bin/ld \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
+            OBJSIZE=llvm-size \
+            LLVM_IAS=0 \
+            olddefconfig
           
-          # 5. Запускаем компиляцию самого файла ядра Image
-          make $MAKE_ARGS Image -j$(nproc)
-
+          # 4. Запускаем компиляцию ядра Image с принудительной изоляцией инструментов
+          make O=out \
+            CC=clang \
+            AS=aarch64-linux-gnu-as \
+            LD=ld.lld \
+            HOSTCC=gcc \
+            HOSTLD=/usr/bin/ld \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
+            OBJSIZE=llvm-size \
+            LLVM_IAS=0 \
+            Image -j$(nproc)
 
       - name: Package with AnyKernel3
         run: |
