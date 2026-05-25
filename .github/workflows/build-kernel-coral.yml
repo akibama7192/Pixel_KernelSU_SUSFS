@@ -1,4 +1,4 @@
-name: Build Coral 4.14 Kernel
+name: Compile My Custom Pixel Kernel
 
 on:
   workflow_call:  # This allows this workflow to be called from another workflow
