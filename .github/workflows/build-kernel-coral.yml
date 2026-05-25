@@ -71,9 +71,10 @@ jobs:
 
           # 4. ТОЧНЫЕ ПУТИ: Раскладываем файлы маскировки из правильных папок репозитория simonpunk
           mkdir -p fs/susfs include/linux
-          cp -r $GITHUB_WORKSPACE/susfs_source/kernel-4.14/fs/susfs/* fs/susfs/ || true
-          cp -r $GITHUB_WORKSPACE/susfs_source/kernel-4.14/include/linux/susfs.h include/linux/ || true
+          cp -r $GITHUB_WORKSPACE/susfs_source/fs/susfs/* fs/susfs/ || true
+          cp -r $GITHUB_WORKSPACE/susfs_source/include/linux/susfs.h include/linux/ || true
           echo "obj-y += susfs/" >> fs/Makefile
+
 
       - name: Apply Patches
         run: |
