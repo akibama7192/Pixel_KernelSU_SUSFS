@@ -22,7 +22,7 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc bison build-essential ccache flex g++-multilib gcc-multilib git gnupg gperf lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev libelf-dev
+          sudo apt-get install -y bc bison build-essential ccache flex g++-multilib gcc-multilib gnupg gperf lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev libelf-dev
 
       - name: Download Proton Clang
         run: |
@@ -69,10 +69,10 @@ jobs:
             cp $GITHUB_WORKSPACE/kernel_patches/KernelSU/ksu_susfs.patch $GITHUB_WORKSPACE/kernel_patches/next/0001-kernel-patch-susfs-v1.5.5-to-KernelSU-Next-v1.0.5.patch || true
           fi
 
-          # 4. ИСПРАВЛЕННЫЙ ПУТЬ: Копируем файлы самого SUSFS из корня скачанной ветки susfs_source
+          # 4. ТОЧНЫЕ ПУТИ: Раскладываем файлы маскировки из правильных папок репозитория simonpunk
           mkdir -p fs/susfs include/linux
-          cp -r $GITHUB_WORKSPACE/susfs_source/kernel_patches/fs/* fs/susfs/ || true
-          cp -r $GITHUB_WORKSPACE/susfs_source/kernel_patches/include/linux/* include/linux/ || true
+          cp -r $GITHUB_WORKSPACE/susfs_source/kernel-4.14/fs/susfs/* fs/susfs/ || true
+          cp -r $GITHUB_WORKSPACE/susfs_source/kernel-4.14/include/linux/susfs.h include/linux/ || true
           echo "obj-y += susfs/" >> fs/Makefile
 
       - name: Apply Patches
@@ -80,10 +80,8 @@ jobs:
           cd $GITHUB_WORKSPACE/kernel
           echo "Applying SUSFS and KernelSU patches..."
           
-          # Создаем пустую заглушку патча, если скрипт будет искать её в папке next
           touch $GITHUB_WORKSPACE/kernel_patches/next/0001-kernel-patch-susfs-v1.5.5-to-KernelSU-Next-v1.0.5.patch
           
-          # Применяем оригинальный патч ядра 4.14 напрямую для надежности
           patch -p1 < $GITHUB_WORKSPACE/kernel_patches/50_add_susfs_in_kernel-4.14.patch || true
           patch -p1 < $GITHUB_WORKSPACE/kernel_patches/KernelSU/ksu_susfs.patch || true
 
@@ -91,7 +89,6 @@ jobs:
         env:
           ARCH: arm64
           SUBARCH: arm64
-          # Исправление ошибки ассемблера: принудительно задаем кросс-префиксы для всего окружения шага
           CLANG_TRIPLE: aarch64-linux-gnu-
           CROSS_COMPILE: aarch64-linux-gnu-
           CROSS_COMPILE_ARM32: arm-linux-gnueabi-
