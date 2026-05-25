@@ -89,13 +89,12 @@ jobs:
         env:
           ARCH: arm64
           SUBARCH: arm64
-          CLANG_TRIPLE: aarch64-linux-gnu-
           CROSS_COMPILE: aarch64-linux-gnu-
           CROSS_COMPILE_ARM32: arm-linux-gnueabi-
         run: |
           cd $GITHUB_WORKSPACE/kernel
           
-          # 1. Модифицируем дефконфиг под модули KSU и SUSFS
+          # 1. Твикаем дефконфиг под модули KSU и SUSFS
           echo "CONFIG_KSU=y" >> arch/arm64/configs/floral_defconfig
           echo "CONFIG_SUSFS=y" >> arch/arm64/configs/floral_defconfig
           echo "CONFIG_SUSFS_AUTO_ADD_SUS_KSTAT=y" >> arch/arm64/configs/floral_defconfig
@@ -104,28 +103,30 @@ jobs:
           echo "CONFIG_SUSFS_SUS_MOUNT=y" >> arch/arm64/configs/floral_defconfig
           echo "CONFIG_SUSFS_SECURE_MKDIR_AND_INODELS=y" >> arch/arm64/configs/floral_defconfig
           
-          # Очистка конфликтующих флагов инициализации Clang
+          # Отключаем конфликтующие флаги оптимизации и защиты FORTIFY на уровне Makefile ядра
           find . -name "Makefile*" -exec sed -i 's/-ftrivial-auto-var-init=zero/-ftrivial-auto-var-init=pattern/g' {} + || true
           sed -i 's/-ftrivial-auto-var-init=zero/-ftrivial-auto-var-init=pattern/g' Makefile || true
           sed -i 's/CONFIG_COMPAT_VDSO=y/CONFIG_COMPAT_VDSO=n/g' arch/arm64/configs/floral_defconfig || true
+          sed -i 's/-D_FORTIFY_SOURCE=2/-D_FORTIFY_SOURCE=0/g' Makefile || true
 
-          # 2. Настраиваем жесткие пути Proton Clang
+          # 2. Настраиваем окружение Proton Clang
           CLANG_BIN="$GITHUB_WORKSPACE/toolchain/clang/bin"
           export PATH="$CLANG_BIN:/usr/bin:/bin:$PATH"
           
           make O=out clean || true
           make O=out mrproper || true
           
-          # 3. Аргументы сборки с привязкой инструментов Proton Clang и отключением LLVM_IAS
+          # 3. Чистые аргументы компиляции для ядер Qualcomm msm-4.14
           MAKE_ARGS="O=out \
             CC=clang \
             HOSTCC=gcc \
             HOSTLD=/usr/bin/ld \
-            AR=$CLANG_BIN/llvm-ar \
-            NM=$CLANG_BIN/llvm-nm \
-            OBJCOPY=$CLANG_BIN/llvm-objcopy \
-            OBJDUMP=$CLANG_BIN/llvm-objdump \
-            STRIP=$CLANG_BIN/llvm-strip \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
             LLVM_IAS=0"
           
           # 4. Генерируем конфигурацию .config
@@ -134,6 +135,7 @@ jobs:
           
           # 5. Запускаем компиляцию самого файла ядра Image
           make $MAKE_ARGS Image -j$(nproc)
+
 
       - name: Package with AnyKernel3
         run: |
