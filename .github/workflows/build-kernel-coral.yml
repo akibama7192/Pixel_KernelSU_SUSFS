@@ -34,7 +34,8 @@ jobs:
       - name: Clone Kernel Source
         run: |
           RAW_URL="https://github.com/freak07/FLORAL"
-          git clone --depth=1 "$(echo "$RAW_URL" | tr -d ' ')" -b android-13.0 $GITHUB_WORKSPACE/kernel
+          # Убрали -b android-13.0, чтобы клонировать ветку по умолчанию (master)
+          git clone --depth=1 "$(echo "$RAW_URL" | tr -d ' ')" $GITHUB_WORKSPACE/kernel
 
       - name: Clone Dependencies & Patches
         run: |
@@ -79,7 +80,6 @@ jobs:
           cd $GITHUB_WORKSPACE/kernel
           
           # Запуск оригинального патчера автоматики под видом конфигурации coral
-          # Благодаря фиксу путей выше, этот шаг теперь пройдет успешно
           echo "Applying SUSFS and KernelSU patches..."
           bash $GITHUB_WORKSPACE/kernel_patches/patch.sh coral || true
 
