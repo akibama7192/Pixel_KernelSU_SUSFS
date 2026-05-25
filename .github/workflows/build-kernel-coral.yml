@@ -30,9 +30,6 @@ jobs:
           ANYKERNEL_BRANCH="master"
           SUSFS_BRANCH="kernel-4.14"
 
-          echo "Using branch for AnyKernel3: $ANYKERNEL_BRANCH"
-          echo "Using branch for SUSFS: $SUSFS_BRANCH"
-
           RAW_AK3="https://github.com/osm0sis/AnyKernel3.git"
           git clone "$(echo "$RAW_AK3" | tr -d ' ')" -b "$ANYKERNEL_BRANCH" AnyKernel3
 
@@ -57,43 +54,35 @@ jobs:
           echo "obj-y += kernelsu/" >> drivers/Makefile
           rm -rf KernelSU-Source
 
-      - name: Patch Kernel Source
+      - name: Patch Kernel Source (Direct Patching)
         run: |
           cd $GITHUB_WORKSPACE/kernel
-          echo "Changing to configuration directory: coral..."
+          echo "Applying SUSFS and KernelSU patches directly..."
           
-          # Нативная раскладка файлов SUSFS автора prpjzz
+          # 1. Раскладываем файлы самого SUSFS строго по нужным папкам ядра
           mkdir -p fs/susfs include/linux
           cp -r $GITHUB_WORKSPACE/susfs4ksu/kernel_patches/fs/susfs/* fs/susfs/ || true
           cp -r $GITHUB_WORKSPACE/susfs4ksu/kernel_patches/include/linux/susfs.h include/linux/ || true
           echo "obj-y += susfs/" >> fs/Makefile
 
-          # КРИТИЧЕСКИЙ ФИКС ДЛЯ ПАТЧЕРА: Создаем структуру папок next, которую требует patch.sh
-          mkdir -p $GITHUB_WORKSPACE/kernel_patches/next
-          if [ -f "$GITHUB_WORKSPACE/kernel_patches/KernelSU/ksu_susfs.patch" ]; then
-            cp $GITHUB_WORKSPACE/kernel_patches/KernelSU/ksu_susfs.patch $GITHUB_WORKSPACE/kernel_patches/next/0001-kernel-patch-susfs-v1.5.5-to-KernelSU-Next-v1.0.5.patch || true
-          fi
-          touch $GITHUB_WORKSPACE/kernel_patches/next/0001-kernel-patch-susfs-v1.5.5-to-KernelSU-Next-v1.0.5.patch
-
-          # Запуск оригинального патчера автоматики
-          bash $GITHUB_WORKSPACE/kernel_patches/patch.sh coral || true
+          # 2. Накладываем патчи напрямую через утилиту patch без использования patch.sh
+          patch -p1 < $GITHUB_WORKSPACE/kernel_patches/50_add_susfs_in_kernel-4.14.patch || true
+          patch -p1 < $GITHUB_WORKSPACE/kernel_patches/KernelSU/ksu_susfs.patch || true
 
       - name: Build Kernel
         env:
           ARCH: arm64
           SUBARCH: arm64
-          # Фикс ассемблера для Ubuntu 22.04: выносим кросс-префиксы в окружение шага
           CLANG_TRIPLE: aarch64-linux-gnu-
           CROSS_COMPILE: aarch64-linux-gnu-
           CROSS_COMPILE_ARM32: arm-linux-gnueabi-
         run: |
           cd $GITHUB_WORKSPACE/kernel
           
-          # Задаем жесткий путь к бинарникам Proton Clang на первое место в PATH
           CLANG_BIN="$GITHUB_WORKSPACE/toolchain/clang/bin"
           export PATH="$CLANG_BIN:/usr/bin:/bin:$PATH"
           
-          # Прописываем конфигурации маскировки в дефконфиг Pixel 4 XL
+          # Прописываем конфигурации маскировки в дефконфиг
           echo "CONFIG_KSU=y" >> arch/arm64/configs/floral_defconfig
           echo "CONFIG_SUSFS=y" >> arch/arm64/configs/floral_defconfig
           echo "CONFIG_SUSFS_AUTO_ADD_SUS_KSTAT=y" >> arch/arm64/configs/floral_defconfig
@@ -108,19 +97,17 @@ jobs:
           sed -i 's/CONFIG_COMPAT_VDSO=y/CONFIG_COMPAT_VDSO=n/g' arch/arm64/configs/floral_defconfig || true
           sed -i 's/-D_FORTIFY_SOURCE=2/-D_FORTIFY_SOURCE=0/g' Makefile || true
 
-          # Сборка с отключенным встроенным ассемблером и жестким перенаправлением на кросс-инструменты тулчейна
+          # Сборка с отключенным встроенным ассемблером
           MAKE_ARGS="O=out \
             CC=clang \
-            AS=aarch64-linux-gnu-as \
-            LD=ld.lld \
             HOSTCC=gcc \
             HOSTLD=/usr/bin/ld \
-            AR=llvm-ar \
-            NM=llvm-nm \
-            OBJCOPY=llvm-objcopy \
-            OBJDUMP=llvm-objdump \
-            STRIP=llvm-strip \
-            OBJSIZE=llvm-size \
+            AR=$CLANG_BIN/llvm-ar \
+            NM=$CLANG_BIN/llvm-nm \
+            OBJCOPY=$CLANG_BIN/llvm-objcopy \
+            OBJDUMP=$CLANG_BIN/llvm-objdump \
+            STRIP=$CLANG_BIN/llvm-strip \
+            OBJSIZE=$CLANG_BIN/llvm-size \
             LLVM_IAS=0"
           
           make $MAKE_ARGS floral_defconfig
