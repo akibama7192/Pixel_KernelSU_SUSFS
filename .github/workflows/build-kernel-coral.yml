@@ -80,10 +80,14 @@ jobs:
           patch -p1 < $GITHUB_WORKSPACE/kernel_patches/50_add_susfs_in_kernel-4.14.patch || true
           patch -p1 < $GITHUB_WORKSPACE/kernel_patches/KernelSU/ksu_susfs.patch || true
 
-      - name: Configure Defconfig
+      - name: Configure and Compile Kernel
+        env:
+          ARCH: arm64
+          SUBARCH: arm64
         run: |
           cd $GITHUB_WORKSPACE/kernel
           
+          # 1. Твикаем дефконфиг ДО запуска утилиты make
           echo "CONFIG_KSU=y" >> arch/arm64/configs/floral_defconfig
           echo "CONFIG_SUSFS=y" >> arch/arm64/configs/floral_defconfig
           echo "CONFIG_SUSFS_AUTO_ADD_SUS_KSTAT=y" >> arch/arm64/configs/floral_defconfig
@@ -92,26 +96,19 @@ jobs:
           echo "CONFIG_SUSFS_SUS_MOUNT=y" >> arch/arm64/configs/floral_defconfig
           echo "CONFIG_SUSFS_SECURE_MKDIR_AND_INODELS=y" >> arch/arm64/configs/floral_defconfig
           
+          # Очистка конфликтующих флагов Clang в самом дефконфиге
           find . -name "Makefile*" -exec sed -i 's/-ftrivial-auto-var-init=zero/-ftrivial-auto-var-init=pattern/g' {} + || true
           sed -i 's/-ftrivial-auto-var-init=zero/-ftrivial-auto-var-init=pattern/g' Makefile || true
           sed -i 's/CONFIG_COMPAT_VDSO=y/CONFIG_COMPAT_VDSO=n/g' arch/arm64/configs/floral_defconfig || true
 
-      - name: Compile Kernel
-        env:
-          ARCH: arm64
-          SUBARCH: arm64
-        run: |
-          cd $GITHUB_WORKSPACE/kernel
-          
-          # Задаем строгий путь к бинарникам Proton Clang
+          # 2. Настраиваем окружение компилятора Proton Clang
           CLANG_BIN="$GITHUB_WORKSPACE/toolchain/clang/bin"
           export PATH="$CLANG_BIN:/usr/bin:/bin:$PATH"
           
-          # Очищаем предыдущие остатки неудачной компиляции
           make O=out clean || true
           make O=out mrproper || true
           
-          # 1. Применяем дефконфиг
+          # 3. Генерируем финальный .config уже со всеми встроенными модулями KSU и SUSFS
           make O=out \
             CC=clang \
             CLANG_TRIPLE=aarch64-linux-gnu- \
@@ -121,7 +118,6 @@ jobs:
             HOSTLD=/usr/bin/ld \
             floral_defconfig
           
-          # 2. Принимаем изменения конфигурации
           make O=out \
             CC=clang \
             CLANG_TRIPLE=aarch64-linux-gnu- \
@@ -131,7 +127,7 @@ jobs:
             HOSTLD=/usr/bin/ld \
             olddefconfig
           
-          # 3. Запускаем чистую сборку самого ядра Image с жестким указанием путей утилит тулчейна
+          # 4. Запускаем чистую сборку самого ядра Image
           make O=out \
             CC=clang \
             CLANG_TRIPLE=aarch64-linux-gnu- \
@@ -145,8 +141,6 @@ jobs:
             OBJDUMP=$CLANG_BIN/llvm-objdump \
             STRIP=$CLANG_BIN/llvm-strip \
             Image -j$(nproc)
-
-
 
       - name: Package with AnyKernel3
         run: |
