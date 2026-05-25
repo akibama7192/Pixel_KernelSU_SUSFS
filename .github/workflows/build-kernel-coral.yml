@@ -82,16 +82,18 @@ jobs:
         env:
           ARCH: arm64
           SUBARCH: arm64
+          # Фикс ассемблера для Ubuntu 22.04: выносим кросс-префиксы в окружение шага
           CLANG_TRIPLE: aarch64-linux-gnu-
           CROSS_COMPILE: aarch64-linux-gnu-
           CROSS_COMPILE_ARM32: arm-linux-gnueabi-
         run: |
           cd $GITHUB_WORKSPACE/kernel
           
+          # Задаем жесткий путь к бинарникам Proton Clang на первое место в PATH
           CLANG_BIN="$GITHUB_WORKSPACE/toolchain/clang/bin"
           export PATH="$CLANG_BIN:/usr/bin:/bin:$PATH"
           
-          # Прописываем конфигурации маскировки в дефконфиг
+          # Прописываем конфигурации маскировки в дефконфиг Pixel 4 XL
           echo "CONFIG_KSU=y" >> arch/arm64/configs/floral_defconfig
           echo "CONFIG_SUSFS=y" >> arch/arm64/configs/floral_defconfig
           echo "CONFIG_SUSFS_AUTO_ADD_SUS_KSTAT=y" >> arch/arm64/configs/floral_defconfig
@@ -106,9 +108,11 @@ jobs:
           sed -i 's/CONFIG_COMPAT_VDSO=y/CONFIG_COMPAT_VDSO=n/g' arch/arm64/configs/floral_defconfig || true
           sed -i 's/-D_FORTIFY_SOURCE=2/-D_FORTIFY_SOURCE=0/g' Makefile || true
 
-          # Сборка с отключенным встроенным ассемблером
+          # Сборка с отключенным встроенным ассемблером и жестким перенаправлением на кросс-инструменты тулчейна
           MAKE_ARGS="O=out \
             CC=clang \
+            AS=aarch64-linux-gnu-as \
+            LD=ld.lld \
             HOSTCC=gcc \
             HOSTLD=/usr/bin/ld \
             AR=llvm-ar \
