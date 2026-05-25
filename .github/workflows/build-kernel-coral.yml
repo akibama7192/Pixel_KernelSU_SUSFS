@@ -1,7 +1,9 @@
 name: Compile My Custom Pixel Kernel
 
 on:
-  workflow_call:  # This allows this workflow to be called from another workflow
+  push:
+    branches: [ main ]
+  workflow_dispatch:
   
 jobs:
   build-kernel-4-14-kernelsu-susfs:
