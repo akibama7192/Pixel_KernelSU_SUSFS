@@ -53,39 +53,32 @@ jobs:
         run: |
           cd $GITHUB_WORKSPACE/kernel
           
-          # 1. Скачиваем стабильный релиз KernelSU v0.9.5
+          # Скачиваем официальный KernelSU
           RAW_KSU="https:// github.com / tiann / KernelSU"
           git clone --depth=1 "$(echo "$RAW_KSU" | tr -d ' ')" KernelSU-Source
+          
+          # Автоматически переключаемся на нужную для старых ядер версию v0.9.5
           cd KernelSU-Source && git fetch --tags && git checkout v0.9.5 && cd ..
+          
+          # Интегрируем его структуру папок в дерево драйверов
           cp -r KernelSU-Source/kernel drivers/kernelsu
           echo "obj-y += kernelsu/" >> drivers/Makefile
           rm -rf KernelSU-Source
 
-          # 2. Подготавливаем папки под структуру автоматики WildKernels
+          # Создаем структуру, которую ожидает увидеть автоматический патчер WildKernels
           mkdir -p $GITHUB_WORKSPACE/kernel_patches/next
-          
-          # 3. Копируем патчи туда, где их ожидает увидеть скрипт patch.sh
           if [ -f "$GITHUB_WORKSPACE/kernel_patches/KernelSU/ksu_susfs.patch" ]; then
             cp $GITHUB_WORKSPACE/kernel_patches/KernelSU/ksu_susfs.patch $GITHUB_WORKSPACE/kernel_patches/next/0001-kernel-patch-susfs-v1.5.5-to-KernelSU-Next-v1.0.5.patch || true
           fi
 
-          # 4. ТОЧНЫЕ ПУТИ: Раскладываем файлы маскировки из правильных папок репозитория simonpunk
-          mkdir -p fs/susfs include/linux
-          cp -r $GITHUB_WORKSPACE/susfs_source/kernel_patches/fs/susfs/* fs/susfs/ || true
-          cp -r $GITHUB_WORKSPACE/susfs_source/kernel_patches/include/linux/susfs.h include/linux/ || true
-          echo "obj-y += susfs/" >> fs/Makefile
-
-
-
       - name: Apply Patches
         run: |
           cd $GITHUB_WORKSPACE/kernel
-          echo "Applying SUSFS and KernelSU patches..."
+          echo "Applying SUSFS and KernelSU patches using automation..."
           
-          touch $GITHUB_WORKSPACE/kernel_patches/next/0001-kernel-patch-susfs-v1.5.5-to-KernelSU-Next-v1.0.5.patch
-          
-          patch -p1 < $GITHUB_WORKSPACE/kernel_patches/50_add_susfs_in_kernel-4.14.patch || true
-          patch -p1 < $GITHUB_WORKSPACE/kernel_patches/KernelSU/ksu_susfs.patch || true
+          # Запускаем оригинальный скрипт-патчер автоматики. 
+          # Он сам найдет скачанный репозиторий susfs_source и разложит файлы fs/susfs на места.
+          bash $GITHUB_WORKSPACE/kernel_patches/patch.sh coral || true
 
       - name: Configure and Compile Kernel
         env:
